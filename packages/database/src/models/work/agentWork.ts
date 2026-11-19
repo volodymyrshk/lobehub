@@ -7,9 +7,9 @@ import type {
   WorkVersionMetadata,
 } from '@lobechat/types';
 import { AGENT_WORK_CLI_TOOL_IDENTIFIER } from '@lobechat/types';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, exists } from 'drizzle-orm';
 
-import { works } from '../../schemas/work';
+import { works, workVersions } from '../../schemas/work';
 import { type WorkContext, workOwnership } from './context';
 import { registerExternalWork } from './external';
 import { fileBasename, fileWorkResourceId, registerFileWork } from './file';
@@ -66,7 +66,9 @@ const provenanceOf = (run: AgentWorkRunContext, toolName: string) => ({
 /**
  * Refuse to take over a Work the system collected automatically. Without this,
  * `lh work create` on a path the completion scan already registered would
- * append a version to a Work the agent may never update afterwards.
+ * append a version to a Work the agent may never update afterwards. Returns
+ * whether the agent already created this Work, so a repeat create is labelled
+ * as an update.
  */
 const assertNotAutoRegistered = async (
   ctx: WorkContext,
@@ -91,6 +93,7 @@ const assertNotAutoRegistered = async (
       'This was already registered as a Work automatically and cannot be changed with lh work',
     );
   }
+  return Boolean(existing);
 };
 
 /**
@@ -129,12 +132,12 @@ export const createAgentWork = async (
   }
 
   const url = normalizeAgentLink(input.url);
-  await assertNotAutoRegistered(ctx, 'link', url);
+  const alreadyCreated = await assertNotAutoRegistered(ctx, 'link', url);
 
   const work = await registerExternalWork(ctx, {
     ...provenanceOf(run, 'createWork'),
     agentEditable: true,
-    changeType: 'created',
+    changeType: alreadyCreated ? 'updated' : 'created',
     description: input.description ?? null,
     resourceId: url,
     resourceType: 'link',
@@ -158,7 +161,22 @@ export const updateAgentWork = async (
   const [work] = await ctx.db
     .select()
     .from(works)
-    .where(and(eq(works.id, input.workId), workOwnership(ctx)))
+    .where(
+      and(
+        eq(works.id, input.workId),
+        workOwnership(ctx),
+        // Only the creator's runs in a conversation that produced the Work may
+        // change it: workspace scope alone would let a teammate's run, or a run
+        // in another conversation, append versions to it.
+        eq(works.userId, run.userId),
+        exists(
+          ctx.db
+            .select({ id: workVersions.id })
+            .from(workVersions)
+            .where(and(eq(workVersions.workId, works.id), eq(workVersions.topicId, run.topicId))),
+        ),
+      ),
+    )
     .limit(1);
   if (!work?.resourceId) throw new AgentWorkError('NOT_FOUND', `Work ${input.workId} not found`);
   if (work.metadata?.agentEditable !== true) {
@@ -205,8 +223,8 @@ export const updateAgentWork = async (
         url: input.file?.fileUrl,
       },
       metadata,
-      // An empty patch still records a version: a new file under the same
-      // display fields is a real change.
+      // A file-only update patches `url`, so it records a version even
+      // when the title and description are unchanged.
       patchFields,
     }),
   );

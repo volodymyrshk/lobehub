@@ -129,6 +129,7 @@ apps/cli/src/
 | `lh provider`      | -     | Provider CRUD, config, test, toggle                                                |
 | `lh legacy-plugin` | -     | Legacy 1.0 plugins: list, search, uninstall, update                                |
 | `lh search`        | -     | Global search across all types                                                     |
+| `lh work`          | -     | Register the files and links an agent run produced as Works, update them, lookup   |
 | `lh session-group` | -     | Manage agent session groups                                                        |
 | `lh workspace`     | `ws`  | Workspace list, scope switch, members, invites, usage                              |
 | `lh user`          | -     | Manage user account and settings                                                   |

@@ -53,8 +53,6 @@ export const resolveHeteroTopicWorkspace = async (params: {
   return topic.workspaceId;
 };
 
-export { resolveHeteroRunShareVisitor } from '@/server/services/heterogeneousAgent/shareVisitor';
-
 /**
  * Workspace `use` guard for operation-keyed endpoints: resolve the operation
  * row to its agent and run the same `use` guard. Operations without an agent

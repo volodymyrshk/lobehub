@@ -4,7 +4,7 @@ import { AGENT_WORK_CLI_TOOL_IDENTIFIER } from '@lobechat/types';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { works } from '../../../schemas';
+import { topics, works, workspaces } from '../../../schemas';
 import { TaskModel } from '../../task';
 import { AgentWorkError, WorkModel } from '..';
 import { fileWorkResourceId } from '../file';
@@ -16,6 +16,7 @@ import {
   threadId,
   topicId,
   userId,
+  userId2,
 } from './_fixtures';
 
 beforeEach(seedWorkTestData);
@@ -27,6 +28,7 @@ const run: AgentWorkRunContext = {
   threadId,
   topicId,
   userId,
+  userId2,
 };
 
 const reportFile = {
@@ -233,12 +235,73 @@ describe('WorkModel · agent-created Works', () => {
     });
 
     await expectAgentWorkError(
-      new WorkModel(serverDB, 'work-test-user-id-2').updateAgentWork(
-        { ...run, userId: 'work-test-user-id-2' },
+      new WorkModel(serverDB, userId2).updateAgentWork(
+        { ...run, userId: userId2 },
         { title: 'Hijacked', workId: created.id },
       ),
       'NOT_FOUND',
     );
+  });
+
+  it('lets only runs in a conversation that produced the Work update it', async () => {
+    const otherTopicId = 'work-agent-other-topic';
+    await serverDB.insert(topics).values({ id: otherTopicId, userId });
+    const otherRun = { ...run, operationId: 'op-other', topicId: otherTopicId };
+    const created = await workModel().createAgentWork(run, {
+      title: 'Preview',
+      type: 'link',
+      url: 'https://preview.example.com',
+    });
+
+    await expectAgentWorkError(
+      workModel().updateAgentWork(otherRun, { title: 'Renamed', workId: created.id }),
+      'NOT_FOUND',
+    );
+
+    // Registering the same link there joins that conversation, labelled as an update.
+    const again = await workModel().createAgentWork(otherRun, {
+      title: 'Preview',
+      type: 'link',
+      url: 'https://preview.example.com',
+    });
+    expect(again.id).toBe(created.id);
+    const versions = await workModel().listVersions(created.id);
+    expect(versions.map((version) => version.changeType).sort()).toEqual(['created', 'updated']);
+
+    const renamed = await workModel().updateAgentWork(otherRun, {
+      title: 'Renamed',
+      workId: created.id,
+    });
+    expect(renamed.title).toBe('Renamed');
+  });
+
+  it("keeps a teammate's agent Work out of reach in a workspace", async () => {
+    const workspaceId = 'work-agent-workspace';
+    await serverDB.insert(workspaces).values({
+      id: workspaceId,
+      name: 'Test',
+      primaryOwnerId: userId,
+      slug: 'agent-work',
+    });
+    try {
+      const created = await new WorkModel(serverDB, userId, workspaceId).createAgentWork(run, {
+        title: 'Preview',
+        type: 'link',
+        url: 'https://preview.example.com',
+      });
+      // A Work teammates can see, so only the creator check keeps it out of reach.
+      await serverDB.update(works).set({ visibility: 'public' }).where(eq(works.id, created.id));
+
+      await expectAgentWorkError(
+        new WorkModel(serverDB, userId2, workspaceId).updateAgentWork(
+          { ...run, userId: userId2 },
+          { title: 'Hijacked', workId: created.id },
+        ),
+        'NOT_FOUND',
+      );
+    } finally {
+      await serverDB.delete(workspaces).where(eq(workspaces.id, workspaceId));
+    }
   });
 
   it('stamps agentEditable on a task Work its tool config allows', async () => {
