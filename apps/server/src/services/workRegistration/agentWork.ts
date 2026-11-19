@@ -54,11 +54,10 @@ export const resolveAgentWorkRun = async (params: {
   const { auth, db, operationId } = params;
 
   let userId: string;
-  let workspaceId: string | undefined;
   if (auth.heteroAuthKind === 'operation') {
     if (!auth.heteroOperation) throw new AgentWorkRunError('Invalid operation token', 401);
     try {
-      ({ userId, workspaceId } = await resolveActiveHeteroOperationPrincipal({
+      ({ userId } = await resolveActiveHeteroOperationPrincipal({
         capability: 'work:write',
         claims: auth.heteroOperation,
         db,
@@ -96,7 +95,7 @@ export const resolveAgentWorkRun = async (params: {
   if (!operation.topicId) {
     throw new AgentWorkRunError('Operation has no conversation to attach Works to', 409);
   }
-  workspaceId = operation.workspaceId ?? undefined;
+  const workspaceId = operation.workspaceId ?? undefined;
   if (
     auth.heteroAuthKind === 'user' &&
     workspaceId &&
