@@ -558,6 +558,7 @@
   "work.type.githubPullRequest": "GitHub PR",
   "work.type.linearDocument": "Linear 文档",
   "work.type.linearIssue": "Linear Issue",
+  "work.type.link": "链接",
   "work.type.task": "任务",
   "work.updatedAt": "更新于 {{date}}"
 }

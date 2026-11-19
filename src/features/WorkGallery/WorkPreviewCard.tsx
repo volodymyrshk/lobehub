@@ -165,6 +165,9 @@ const workTypeKey = (item: WorkSummaryItem) => {
     case 'linear_issue': {
       return 'work.type.linearIssue';
     }
+    case 'link': {
+      return 'work.type.link';
+    }
     case 'task': {
       return 'work.type.task';
     }

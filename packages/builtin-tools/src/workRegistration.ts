@@ -216,6 +216,7 @@ const resolveTaskWorkIntent = ({
 
   return {
     action: config.action,
+    ...(config.agentEditable && { agentEditable: true }),
     changeType: workChangeTypeFromAction(config.action),
     targets,
     type: 'task',
@@ -238,6 +239,7 @@ const resolveDocumentWorkIntent = ({
     action: 'register',
     document: {
       ...document,
+      ...(config.agentEditable && { agentEditable: true }),
       changeType: workChangeTypeFromAction(config.action),
       // The concrete API name is the document Work's producing tool.
       toolName: apiName,
@@ -358,7 +360,7 @@ const dispatchTaskWorkIntent = async (
     toolName,
     topicId,
   } = provenance;
-  const { action, changeType, targets } = intent;
+  const { action, agentEditable, changeType, targets } = intent;
 
   if (action === 'delete') {
     const deleteTargets = targets.filter((target) => target.taskId);
@@ -374,6 +376,7 @@ const dispatchTaskWorkIntent = async (
   const results = await Promise.allSettled(
     targets.map((target) =>
       ports.registerTask({
+        ...(agentEditable && { agentEditable }),
         agentId,
         changeType,
         cumulativeCost,

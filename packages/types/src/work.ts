@@ -11,8 +11,16 @@ export type WorkType = 'canvas' | 'document' | 'external' | 'file' | 'goal_repor
 export type ListedWorkType = Exclude<WorkType, 'goal_report'>;
 export type LinearWorkResourceType = 'linear_document' | 'linear_issue';
 export type GithubWorkResourceType = 'github_issue' | 'github_pull_request';
+/**
+ * A plain http(s) link an agent registered itself (`lh work create --url`), such
+ * as a deployed site or a design file. Its resource identity is the normalized
+ * URL. GitHub and Linear links are registered automatically under their own
+ * resource types and are never stored as `link`.
+ */
+export type LinkWorkResourceType = 'link';
 /** Every resource type backed by the unified `external` Work type. */
-export type ExternalWorkResourceType = GithubWorkResourceType | LinearWorkResourceType;
+export type ExternalWorkResourceType =
+  GithubWorkResourceType | LinearWorkResourceType | LinkWorkResourceType;
 export type WorkResourceType =
   'canvas' | 'document' | ExternalWorkResourceType | 'file' | 'goal_report' | 'task';
 export type WorkVisibility = 'private' | 'public';
@@ -51,6 +59,14 @@ export interface CanvasWorkPublishMetadata {
 }
 
 export interface WorkMetadata {
+  /**
+   * The agent may change this Work later through `lh work update`. Stamped once
+   * when the Work identity is first registered and never changed afterwards:
+   * Works collected automatically (completion scans, skill results, manifest
+   * `work` configs without `agentEditable`) leave it unset and stay read-only
+   * to the agent.
+   */
+  agentEditable?: boolean;
   agentShare?: AgentShareWorkProvenance;
   canvasPublish?: CanvasWorkPublishMetadata;
 }
@@ -389,6 +405,13 @@ export type WorkSummaryMap = Record<string, WorkSummaryItem[]>;
 
 export interface RegisterDocumentWorkParams {
   agentDocumentId?: string | null;
+  /**
+   * Stamp the Work as agent-editable when this registration creates it. Ignored
+   * when the Work already exists: editability is fixed at creation. See
+   * {@link WorkMetadata.agentEditable}.
+   */
+  agentEditable?: boolean | null;
+
   /** Agent that produced this version; also validates the agent-document binding when present. */
   agentId?: string | null;
   changeType: WorkVersionChangeType;
@@ -419,9 +442,17 @@ export interface RegisterDocumentWorkParams {
  * `updated`).
  */
 export interface RegisterFileWorkParams {
+  /**
+   * Stamp the Work as agent-editable when this registration creates it. Ignored
+   * when the Work already exists: editability is fixed at creation. See
+   * {@link WorkMetadata.agentEditable}.
+   */
+  agentEditable?: boolean | null;
   agentId?: string | null;
   cumulativeCost?: number | null;
   cumulativeUsage?: WorkVersionCumulativeUsage | null;
+  /** Card description; defaults to `filePath`. */
+  description?: string | null;
   /** The edited file's path within the operation — half of the resource identity. */
   filePath: string;
   messageId?: string | null;
@@ -486,6 +517,12 @@ export interface DeleteWorkParams {
 }
 
 export interface RegisterExternalWorkParams {
+  /**
+   * Stamp the Work as agent-editable when this registration creates it. Ignored
+   * when the Work already exists: editability is fixed at creation. See
+   * {@link WorkMetadata.agentEditable}.
+   */
+  agentEditable?: boolean | null;
   agentId?: string | null;
   changeType: WorkVersionChangeType;
   /** Full body captured in the next version when named in `patchFields`. */
@@ -583,6 +620,12 @@ export interface RegisterSkillToolResultWorkParams {
 export type SkillToolResultWorkInput = Omit<RegisterSkillToolResultWorkParams, 'provider'>;
 
 export interface RegisterTaskWorkParams {
+  /**
+   * Stamp the Work as agent-editable when this registration creates it. Ignored
+   * when the Work already exists: editability is fixed at creation. See
+   * {@link WorkMetadata.agentEditable}.
+   */
+  agentEditable?: boolean | null;
   agentId?: string | null;
   changeType: WorkVersionChangeType;
   cumulativeCost?: number | null;
@@ -622,6 +665,8 @@ export interface WorkTaskTarget {
 export type WorkRegistrationIntent =
   | {
       action: 'create' | 'update' | 'delete';
+      /** From the API's `work.agentEditable`; see {@link WorkMetadata.agentEditable}. */
+      agentEditable?: boolean;
       changeType?: WorkVersionChangeType;
       targets: WorkTaskTarget[];
       type: 'task';
@@ -637,6 +682,8 @@ export type WorkRegistrationIntent =
       action: 'register';
       document: {
         agentDocumentId?: string | null;
+        /** From the API's `work.agentEditable`; see {@link WorkMetadata.agentEditable}. */
+        agentEditable?: boolean;
         agentId?: string | null;
         description?: string | null;
         documentId: string;
@@ -766,4 +813,53 @@ export interface TopicPullRequestItem extends TopicPullRequestWork {
    * merge / close stay locked.
    */
   vouched: boolean;
+}
+
+/** Tool identity stamped on Work versions written by `lh work create|update`. */
+export const AGENT_WORK_CLI_TOOL_IDENTIFIER = 'lobehub-cli';
+
+/**
+ * What an agent registers itself as a Work: a file it produced (already
+ * uploaded to the file store) or a plain http(s) link.
+ */
+export type CreateAgentWorkInput =
+  | {
+      description?: string;
+      file: {
+        fileId: string;
+        /** Absolute path of the produced file; with the topic it forms the Work identity. */
+        filePath: string;
+        fileSize?: number;
+        fileUrl?: string;
+        mimeType?: string;
+      };
+      title?: string;
+      type: 'file';
+    }
+  | {
+      description?: string;
+      title: string;
+      type: 'link';
+      url: string;
+    };
+
+/**
+ * A new version of an agent-created Work. Fields left out keep the current
+ * version's values. `file` applies to file Works. A link Work's URL is its
+ * identity and does not change; a new link is a new Work.
+ */
+export interface UpdateAgentWorkInput {
+  description?: string;
+  file?: Omit<Extract<CreateAgentWorkInput, { type: 'file' }>['file'], 'filePath'>;
+  title?: string;
+  workId: string;
+}
+
+/** The run an agent Work is registered from, resolved server-side from its operation. */
+export interface AgentWorkRunContext {
+  agentId?: string | null;
+  operationId: string;
+  threadId?: string | null;
+  topicId: string;
+  userId: string;
 }

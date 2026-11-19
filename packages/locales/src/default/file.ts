@@ -609,6 +609,7 @@ export default {
   'work.type.githubPullRequest': 'GitHub PR',
   'work.type.linearDocument': 'Linear Document',
   'work.type.linearIssue': 'Linear Issue',
+  'work.type.link': 'Link',
   'work.type.task': 'Task',
   'work.updatedAt': 'Updated {{date}}',
   'work.topicGroup.other': 'Other',

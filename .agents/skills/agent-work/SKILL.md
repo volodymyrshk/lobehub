@@ -42,7 +42,7 @@ A share visitor's run executes as the creator, so owner scope alone cannot separ
 
 ## Registration write paths
 
-Four write paths, two timing classes:
+Five write paths, two timing classes:
 
 | Path                                                                    | When                                | Where                                                                                                                                                               |
 | ----------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -50,6 +50,16 @@ Four write paths, two timing classes:
 | Shell Work scan (hetero codex/claude-code + device `lobe-local-system`) | at operation completion             | `apps/server/src/services/workRegistration/shellWorkRegistration.ts` via `registerWorksForOperation`                                                                |
 | File Work scan (sandbox entity files)                                   | at operation completion             | `apps/server/src/services/workRegistration/registerWorksForOperation.ts`                                                                                            |
 | Task / document works                                                   | at creation by their owning feature | `WorkModel.registerTask` / `registerDocument`                                                                                                                       |
+| Agent-created files and links (`lh work create\|update`)                | at the CLI call, during the run     | `work.createAgentWork` / `updateAgentWork` → `WorkModel.createAgentWork` / `updateAgentWork` (`packages/database/src/models/work/agentWork.ts`)                     |
+
+### Agent-created Works and `agentEditable`
+
+`works.metadata.agentEditable` is stamped once, when the identity is first registered, and decides whether the agent may change the Work later. `lh work` stamps it on everything it creates; every other path leaves it unset unless the tool API's manifest `work` config declares `agentEditable: true` (`PluginApiWorkConfig`). `lh work update` refuses a Work without the flag, and `lh work create` refuses to add a version to an auto-collected Work with the same identity (for example a file path the completion scan already registered). Declare future agent-facing field policy (such as a system-owned price) on the same manifest config instead of special-casing write paths.
+
+- The run is resolved server-side from `operationId` (`resolveAgentWorkRun`): topic, agent and share scope come from the operation row, and an operation token needs the `work:write` capability. A desktop-local run has no operation row and cannot use it.
+- The CLI sends only the uploaded file id; size, type and URL come from the file row (`resolveAgentWorkFile`).
+- Links register as external `resourceType: 'link'` with the canonical URL as identity, so `lh work update` never changes a link's URL (a moved URL would leave `resourceId` pointing at the old one); a new URL is a new Work. GitHub and Linear links are refused because their own paths register them.
+- `rootOperationId` is the run's operation, so the completion lifecycle stamps the display anchor; the card appears after the run completes.
 
 ### Execution-time: skill providers
 

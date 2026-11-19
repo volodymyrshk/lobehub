@@ -66,6 +66,7 @@ export const truncateSummaryText = (value: string | null | undefined): string | 
 /** Provenance fields shared by all four Register*WorkParams shapes. */
 export type WorkVersionEventParams = Pick<
   RegisterTaskWorkParams,
+  | 'agentEditable'
   | 'agentId'
   | 'cumulativeCost'
   | 'cumulativeUsage'

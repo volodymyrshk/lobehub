@@ -247,6 +247,7 @@ const WorkResourceTypeSchema = unionEnum<WorkResourceType>()([
   'github_pull_request',
   'linear_document',
   'linear_issue',
+  'link',
   'file',
   'goal_report',
   'task',

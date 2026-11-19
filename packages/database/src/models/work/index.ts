@@ -1,5 +1,7 @@
 import {
+  type AgentWorkRunContext,
   type CanvasWorkPublishMetadata,
+  type CreateAgentWorkInput,
   type DeleteDocumentWorkParams,
   type DeleteTaskWorkParams,
   type DeleteWorkParams,
@@ -11,6 +13,7 @@ import {
   type RegisterSkillToolResultWorkParams,
   type RegisterTaskWorkParams,
   type SkillToolResultWorkInput,
+  type UpdateAgentWorkInput,
   type WorkAccessScope,
   type WorkItem,
   type WorkSkillProvider,
@@ -20,6 +23,7 @@ import debug from 'debug';
 
 import type { LobeChatDatabase } from '../../type';
 import { ScmChangeRequestModel } from '../scm';
+import { createAgentWork, updateAgentWork } from './agentWork';
 import {
   findCanvasIdByWorkId,
   findCanvasIdsByDeploymentIds,
@@ -74,6 +78,7 @@ const log = debug('lobe-database:work-model');
  * module, keeping the polymorphic Work registry logic split by provider type
  * without changing the public API surface.
  */
+export { AgentWorkError, type AgentWorkErrorCode } from './agentWork';
 export type { GithubShellNormalizeOptions } from './githubToolResult';
 export { type GitPushResult, parseGithubRemoteUrl, parseGitPushResult } from './gitPushResult';
 
@@ -163,6 +168,14 @@ export class WorkModel {
     topicId: string;
     userId: string;
   }): Promise<{ id: string } | null> => findFileWorkVersionByToolCall(this.ctx, params);
+
+  /** `lh work create`: register a file or link the agent produced. See {@link createAgentWork}. */
+  createAgentWork = (run: AgentWorkRunContext, input: CreateAgentWorkInput) =>
+    createAgentWork(this.ctx, run, input);
+
+  /** `lh work update`: add a version to an agent-created Work. See {@link updateAgentWork}. */
+  updateAgentWork = (run: AgentWorkRunContext, input: UpdateAgentWorkInput) =>
+    updateAgentWork(this.ctx, run, input);
 
   handleSkillToolResult = async (
     params: RegisterSkillToolResultWorkParams,
