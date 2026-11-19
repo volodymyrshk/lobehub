@@ -12,6 +12,13 @@ import { CHANNEL_REPLY_OPENER_TIMEOUT_MS, createChannelReplyOpener } from './ope
 const log = debug('lobe-server:channel:reply-opening');
 
 export interface OpenChannelReplyDeps {
+  /**
+   * Whether a shared Agent's share admits the request. A refused one does not open: its reply
+   * fails at dispatch where it was asked, instead of acknowledging work it will not do.
+   */
+  admitShare?: (
+    candidate: ChannelOpeningCandidate & Required<Pick<ChannelOpeningCandidate, 'share'>>,
+  ) => Promise<boolean>;
   /** Builds the opener for a candidate; defaults to the Channel's, run as the requester. */
   createOpener?: (candidate: ChannelOpeningCandidate) => ChannelReplyOpener;
   timeoutMs?: number;
@@ -106,6 +113,12 @@ export const openChannelReply = async (
   try {
     const candidate = await executions.openingCandidate(channelId, jobId);
     if (!candidate) return;
+    if (
+      candidate.share &&
+      deps.admitShare &&
+      !(await deps.admitShare({ ...candidate, share: candidate.share }))
+    )
+      return;
 
     const startedAt = Date.now();
     let opening: Awaited<ReturnType<ChannelReplyOpener>> | undefined;

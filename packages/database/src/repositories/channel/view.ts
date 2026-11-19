@@ -310,7 +310,9 @@ const redactSharedRunError = <
   shareShowsErrorDetails,
   ...job
 }: Job) => {
-  if (!sharedRun || job.errorMessage === null) return job;
+  // A failure that records only its type is redacted too: the type alone can name the owner's
+  // provider or budget (`InsufficientBudgetForModel`), which a visitor must not learn.
+  if (!sharedRun || (job.errorMessage === null && job.errorType === null)) return job;
   const safe = sanitizeVisitorError(
     { message: job.errorMessage, type: job.errorType ?? undefined } as ChatMessageError,
     { showErrorDetails: shareShowsErrorDetails },
