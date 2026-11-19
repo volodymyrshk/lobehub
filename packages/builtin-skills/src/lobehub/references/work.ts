@@ -11,7 +11,7 @@ web page. Users find their Works on the reply and in the resource library.
   http(s) link you produced, such as a deployed site or a published post.
 - \`lh work update <work-id> [--file <path>] [--title <title>] [--description <text>] [--json]\` -
   Add a new version to a Work you created. Options left out keep their values. A link
-  keeps its URL: register a new link with \`lh work create --url\` instead.
+  keeps its URL: register a new link with \`lh work create --url <url>\` instead.
 - \`lh work lookup <github-pr-url>\` - Find the conversations linked to a GitHub pull request.
 
 ## When to use it
