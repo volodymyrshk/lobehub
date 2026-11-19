@@ -185,6 +185,16 @@ export const updateAgentWork = async (
       'This Work was registered automatically and cannot be changed with lh work',
     );
   }
+  // A task or document card mirrors its own resource, so rewriting the card's
+  // title would leave it disagreeing with the task or document it opens.
+  // `agentEditable` on those types stays a hook for future field-level policy.
+  const isLink = work.type === 'external' && work.resourceType === 'link';
+  if (work.type !== 'file' && !isLink) {
+    throw new AgentWorkError(
+      'BAD_REQUEST',
+      'lh work update only changes file and link Works; update the task or document itself',
+    );
+  }
 
   if (input.file && work.type !== 'file') {
     throw new AgentWorkError('BAD_REQUEST', 'Only a file Work takes a new file');

@@ -320,5 +320,12 @@ describe('WorkModel · agent-created Works', () => {
 
     expect(work).not.toBeNull();
     expect(await storedMetadata(work!.id)).toEqual({ agentEditable: true });
+
+    // The card mirrors the task, so lh work update leaves its title to the task.
+    await expectAgentWorkError(
+      workModel().updateAgentWork(run, { title: 'Renamed', workId: work!.id }),
+      'BAD_REQUEST',
+    );
+    expect((await workModel().listVersions(work!.id)).length).toBe(1);
   });
 });
