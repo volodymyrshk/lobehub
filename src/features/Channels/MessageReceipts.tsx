@@ -13,6 +13,7 @@ import { channelActions } from '@/store/channel';
 import { ChannelStatus } from './ChannelStatus';
 import { channelJobStatus, channelJobTone, isChannelJobActive } from './jobStatus';
 import { memberAvatar, memberName } from './memberName';
+import { isShareRefusal } from './shareRefusal';
 import { statusStyles, styles } from './styles';
 import { useOpenReplyAgent } from './useOpenReplyAgent';
 
@@ -184,8 +185,12 @@ export function MessageFailureMark({
   message: ChannelPublicMessage;
 }) {
   const { t, i18n } = useTranslation('channel');
+  // A shared Agent's refusal reads below the message (`ShareRefusalNotice`), not behind a mark.
   const failed = (detail.jobs ?? []).filter(
-    (job) => job.messageId === message.id && job.status === 'failed',
+    (job) =>
+      job.messageId === message.id &&
+      job.status === 'failed' &&
+      !(detail.channel.sharedAgentOwnerId && isShareRefusal(job)),
   );
   if (!failed.length) return null;
   const entries = replyEntries(detail, failed, t('unnamedAgent'));
