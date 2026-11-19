@@ -148,6 +148,54 @@ describe('AgentShareProfileModel', () => {
     expect(items[1].url).toBe('https://github.com/example/repo/issues/1');
   });
 
+  it('features a gallery with its cover and the current version images', async () => {
+    const version = await addWork('gallery', {
+      type: 'gallery',
+      resourceType: 'gallery',
+      resourceId: 'gal_1',
+      url: 'https://app.example.com/f/file-2',
+    });
+    await db
+      .update(workVersions)
+      .set({
+        metadata: {
+          gallery: {
+            coverFileId: 'file-2',
+            items: [
+              {
+                caption: 'Apple',
+                fileId: 'file-1',
+                mimeType: 'image/png',
+                url: 'https://app.example.com/f/file-1',
+              },
+              { fileId: 'file-2', mimeType: 'image/png', url: 'https://app.example.com/f/file-2' },
+              { fileId: 'file-3', url: 'javascript:alert(1)' },
+            ],
+          },
+        },
+      })
+      .where(eq(workVersions.id, version.id));
+
+    const [featured] = await model.listFeaturedWorks(agent, ['gallery']);
+    expect(featured).toMatchObject({ type: 'gallery', url: 'https://app.example.com/f/file-2' });
+    // Only http(s) images are exposed.
+    expect(featured.gallery).toEqual({
+      coverFileId: 'file-2',
+      items: [
+        {
+          caption: 'Apple',
+          fileId: 'file-1',
+          mimeType: 'image/png',
+          url: 'https://app.example.com/f/file-1',
+        },
+        { fileId: 'file-2', mimeType: 'image/png', url: 'https://app.example.com/f/file-2' },
+      ],
+    });
+
+    const { items } = await model.listEligibleWorks(agent);
+    expect(items.find(({ id }) => id === 'gallery')?.gallery?.items).toHaveLength(2);
+  });
+
   it('pages creator candidates and keeps selected Works available outside the page', async () => {
     await addWork('newest');
     await addWork('middle');

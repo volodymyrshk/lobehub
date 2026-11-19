@@ -7,6 +7,7 @@ import { CircleDollarSignIcon, CoinsIcon, GitBranchIcon } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { openGalleryModal } from '@/features/GalleryModal/loader';
 import { useChatStore } from '@/store/chat';
 import { useDensityTokens } from '@/styles/density';
 import { sidebarRow } from '@/styles/density.stylex';
@@ -14,7 +15,13 @@ import { getWorkVersionTotalTokens } from '@/utils/workCumulativeUsage';
 import { formatWorkVersionCost } from '@/utils/workVersionCost';
 
 import CanvasWorkCard from './CanvasWorkCard';
-import { getWorkTypeDescriptor, type WorkBranch, type WorkIcon } from './descriptors';
+import {
+  getGalleryCoverUrl,
+  getGalleryImageCount,
+  getWorkTypeDescriptor,
+  type WorkBranch,
+  type WorkIcon,
+} from './descriptors';
 import { openExternalWork } from './openExternalWork';
 import { useResourceDeletedPrompt } from './useResourceDeletedPrompt';
 
@@ -73,7 +80,20 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
   identifierIcon: css`
     flex-shrink: 0;
   `,
+  cover: css`
+    flex-shrink: 0;
+    display: block;
+    border-radius: 4px;
+    object-fit: cover;
+  `,
+  coverFill: css`
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  `,
   icon: css`
+    overflow: hidden;
     flex-shrink: 0;
 
     width: 36px;
@@ -324,7 +344,21 @@ const WorkSummaryCard = memo<WorkSummaryCardProps>(
     // (e.g. `QA-1989`, `owner/repo#2`) on the card itself, unless the title
     // already fell back to it.
     const identifier = descriptor.getIdentifier(item);
-    const metaIdentifier = identifier && identifier !== title ? identifier : null;
+    // A gallery shows its cover in place of the icon and its image count in the identifier slot.
+    const coverUrl = item.type === 'gallery' ? getGalleryCoverUrl(item) : null;
+    const imageCount = item.type === 'gallery' ? getGalleryImageCount(item) : null;
+    const metaIdentifier =
+      imageCount !== null
+        ? t('workingPanel.works.galleryCount', { count: imageCount })
+        : identifier && identifier !== title
+          ? identifier
+          : null;
+    const renderIcon = (size: number) =>
+      coverUrl ? (
+        <img alt="" className={styles.cover} height={size} src={coverUrl} width={size} />
+      ) : (
+        <Icon size={size} />
+      );
     const identifierIcon = descriptor.getIdentifierIcon?.(item) ?? null;
     const branch = descriptor.getBranch?.(item) ?? null;
     const description = descriptor.getDescription(item);
@@ -364,6 +398,10 @@ const WorkSummaryCard = memo<WorkSummaryCardProps>(
           openFilePreview({ fileId: openTarget.fileId });
           return;
         }
+        case 'gallery': {
+          void openGalleryModal(openTarget);
+          return;
+        }
         case 'task': {
           openTaskDetail(openTarget.taskId);
         }
@@ -390,7 +428,7 @@ const WorkSummaryCard = memo<WorkSummaryCardProps>(
           onClick={clickable ? handleOpen : undefined}
         >
           <Center className={styles.rowIcon} title={stateLabel}>
-            <Icon size={density.iconSize} />
+            {renderIcon(density.iconSize)}
           </Center>
           <Flexbox flex={1} style={{ minWidth: 0 }}>
             <Text ellipsis className={styles.rowTitle} title={title}>
@@ -426,7 +464,7 @@ const WorkSummaryCard = memo<WorkSummaryCardProps>(
           onClick={clickable ? handleOpen : undefined}
         >
           <Center className={styles.inlineIcon} title={stateLabel}>
-            <Icon size={17} />
+            {renderIcon(17)}
           </Center>
           <Flexbox flex={1} gap={2} style={{ minWidth: 0 }}>
             <Flexbox horizontal align={'center'} gap={8} style={{ minWidth: 0 }}>
@@ -461,7 +499,11 @@ const WorkSummaryCard = memo<WorkSummaryCardProps>(
         onClick={clickable ? handleOpen : undefined}
       >
         <Flexbox align={'center'} className={styles.icon} justify={'center'} title={stateLabel}>
-          <Icon size={18} />
+          {coverUrl ? (
+            <img alt="" className={styles.coverFill} src={coverUrl} />
+          ) : (
+            <Icon size={18} />
+          )}
         </Flexbox>
         <Flexbox flex={1} gap={2} style={{ minWidth: 0 }}>
           <Flexbox horizontal align={'center'} gap={8} style={{ minWidth: 0 }}>

@@ -1242,6 +1242,10 @@ export default {
   'share.visitor.profile.works.type.document': 'Document',
   'share.visitor.profile.works.type.task': 'Task',
   'share.visitor.profile.works.type.file': 'File',
+  'share.visitor.profile.works.images_one': '{{count}} image',
+  'share.visitor.profile.works.images_other': '{{count}} images',
+  'share.visitor.profile.works.type.gallery': 'Gallery',
+  'share.visitor.profile.works.viewImages': 'View images',
   'share.visitor.profile.works.type.external': 'Linked work',
   'share.settings.profile.title': 'Public profile',
   'share.settings.profile.desc':

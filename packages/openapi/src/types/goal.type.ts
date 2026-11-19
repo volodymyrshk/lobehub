@@ -237,6 +237,7 @@ const WorkTypeSchema = unionEnum<WorkType>()([
   'document',
   'external',
   'file',
+  'gallery',
   'goal_report',
   'task',
 ]);
@@ -249,6 +250,7 @@ const WorkResourceTypeSchema = unionEnum<WorkResourceType>()([
   'linear_issue',
   'link',
   'file',
+  'gallery',
   'goal_report',
   'task',
 ]);

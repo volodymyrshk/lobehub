@@ -7,6 +7,7 @@ import { memo, useState } from 'react';
 
 import TaskPriorityTag from '@/features/AgentTasks/features/TaskPriorityTag';
 import TaskStatusTag from '@/features/AgentTasks/features/TaskStatusTag';
+import { openGalleryModal } from '@/features/GalleryModal/loader';
 import { getWorkTypeDescriptor, isSafeExternalUrl } from '@/features/Work/descriptors';
 import { useResourceDeletedPrompt } from '@/features/Work/useResourceDeletedPrompt';
 import { useChatStore } from '@/store/chat';
@@ -111,6 +112,9 @@ const WorkVersionHistoryCard = memo<{ work: WorkListItem }>(({ work }) => {
       }
       case 'filePreview': {
         return () => openFilePreview({ fileId: openTarget.fileId });
+      }
+      case 'gallery': {
+        return () => void openGalleryModal(openTarget);
       }
       case 'task': {
         return resourceDeleted

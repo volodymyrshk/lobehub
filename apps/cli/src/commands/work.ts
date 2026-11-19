@@ -141,6 +141,27 @@ export function registerWorkCommand(program: Command) {
     });
 
   work
+    .command('delete')
+    .argument('<work-id>', 'Id of a Work this agent created with lh work create')
+    .description(
+      [
+        'Delete a Work this agent created by mistake: its card and versions are removed,',
+        'uploaded files stay. Works registered automatically cannot be deleted.',
+      ].join('\n'),
+    )
+    .option('--operation <id>', 'Defaults to LOBEHUB_OPERATION_ID')
+    .option('--json', 'Output JSON')
+    .action(async (workId: string, options: AgentWorkOptions) => {
+      const operationId = requireOperationId(options);
+      const client = await getTrpcClient();
+      const deleted: { id: string; title: string | null } =
+        await client.work.deleteAgentWork.mutate({ operationId, workId });
+
+      if (options.json) outputJson(deleted);
+      else console.log(`Deleted Work ${deleted.id}${deleted.title ? `: ${deleted.title}` : ''}`);
+    });
+
+  work
     .command('lookup')
     .argument('<github-pr-url>', 'GitHub pull request URL')
     .description('Find all conversations linked to a GitHub pull request in the current workspace')

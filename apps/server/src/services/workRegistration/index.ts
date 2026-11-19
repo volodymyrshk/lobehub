@@ -23,7 +23,9 @@
 export {
   type AgentWorkRun,
   AgentWorkRunError,
+  parseGalleryImageRef,
   resolveAgentWorkFile,
+  resolveAgentWorkGalleryItems,
   resolveAgentWorkRun,
 } from './agentWork';
 export {

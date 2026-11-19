@@ -1,11 +1,11 @@
-import type { AgentWorkRunContext, WorkAccessScope } from '@lobechat/types';
+import type { AgentWorkRunContext, GalleryWorkImage, WorkAccessScope } from '@lobechat/types';
 import { FileSource } from '@lobechat/types';
-import { eq } from 'drizzle-orm';
+import { and, eq, or, sql } from 'drizzle-orm';
 
 import { FileModel } from '@/database/models/file';
 import { WorkModel } from '@/database/models/work';
 import { hasActiveWorkspaceMembership } from '@/database/models/workspace';
-import { agentOperations } from '@/database/schemas';
+import { agentOperations, messages } from '@/database/schemas';
 import type { LobeChatDatabase } from '@/database/type';
 import type { HeteroOperationJwtClaims } from '@/libs/trpc/utils/internalJwt';
 import { FileService } from '@/server/services/file';
@@ -157,4 +157,88 @@ export const resolveAgentWorkFile = async (params: {
     fileUrl: await new FileService(db, userId, workspaceId).getFileAccessUrl(file),
     mimeType: file.fileType,
   };
+};
+
+/** Sources of the images a gallery may hold: generated images and run outputs. */
+const GALLERY_IMAGE_SOURCES = new Set<string>([FileSource.ImageGeneration, FileSource.ToolResult]);
+
+/**
+ * The file id an agent names a gallery image by: a bare `file_…` id, or the
+ * `/f/<id>` link image generation returns (`![…](https://…/f/file_…)`).
+ */
+export const parseGalleryImageRef = (ref: string): string => {
+  const value = ref.trim();
+  if (!/^https?:\/\//i.test(value)) return value;
+  try {
+    const match = /^\/f\/([^/]+)\/?$/.exec(new URL(value).pathname);
+    if (match) return decodeURIComponent(match[1]);
+  } catch {
+    // Fall through to the error below.
+  }
+  throw new AgentWorkRunError(`${value} is not a LobeHub file link (/f/<file id>)`, 404);
+};
+
+/**
+ * Resolve the images of a gallery to stored image entries. Each must be an
+ * image the run's user generated or uploaded as run output; the URL the card
+ * shows comes from the file row, never from the agent.
+ *
+ * `visitorTopicId` is set for a share visitor's run, which executes as the
+ * creator: each image must then appear in a message of that visitor's
+ * conversation, so a visitor cannot pull the creator's other images into a
+ * card by guessing their ids.
+ */
+export const resolveAgentWorkGalleryItems = async (params: {
+  db: LobeChatDatabase;
+  items: { caption?: string; image: string }[];
+  userId: string;
+  visitorTopicId?: string;
+  workspaceId?: string;
+}): Promise<GalleryWorkImage[]> => {
+  const { db, items, userId, visitorTopicId, workspaceId } = params;
+  const fileModel = new FileModel(db, userId, workspaceId);
+  const fileService = new FileService(db, userId, workspaceId);
+
+  const files = await Promise.all(
+    items.map(async ({ caption, image }) => {
+      const fileId = parseGalleryImageRef(image);
+      const file = await fileModel.findById(fileId);
+      if (!file || file.userId !== userId || !GALLERY_IMAGE_SOURCES.has(file.source ?? '')) {
+        throw new AgentWorkRunError(`Image ${image} not found`, 404);
+      }
+      if (!file.fileType.startsWith('image/')) {
+        throw new AgentWorkRunError(`File ${fileId} is not an image`, 409);
+      }
+      return { caption, file, image };
+    }),
+  );
+
+  if (visitorTopicId) {
+    // Generated images live in generation topics; the conversation only holds
+    // their `/f/<id>` link in the tool result that produced them. One scan of
+    // the topic returns the messages naming any of the images.
+    const shown = await db
+      .select({ content: messages.content })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.topicId, visitorTopicId),
+          eq(messages.userId, userId),
+          or(...files.map(({ file }) => sql`position(${file.id} in ${messages.content}) > 0`)),
+        ),
+      );
+    const missing = files.find(
+      ({ file }) => !shown.some(({ content }) => content?.includes(file.id)),
+    );
+    if (missing) throw new AgentWorkRunError(`Image ${missing.image} not found`, 404);
+  }
+
+  return Promise.all(
+    files.map(async ({ caption, file }) => ({
+      ...(caption?.trim() ? { caption: caption.trim() } : {}),
+      fileId: file.id,
+      mimeType: file.fileType,
+      url: await fileService.getFileAccessUrl(file),
+    })),
+  );
 };

@@ -6,7 +6,8 @@ import type { TaskStatus } from './task';
  * version per acceptance result. It is read through the goal graph, not the
  * generic Work lists.
  */
-export type WorkType = 'canvas' | 'document' | 'external' | 'file' | 'goal_report' | 'task';
+export type WorkType =
+  'canvas' | 'document' | 'external' | 'file' | 'gallery' | 'goal_report' | 'task';
 /** Work types the generic Work lists return; a `goal_report` is read through its goal. */
 export type ListedWorkType = Exclude<WorkType, 'goal_report'>;
 export type LinearWorkResourceType = 'linear_document' | 'linear_issue';
@@ -22,7 +23,7 @@ export type LinkWorkResourceType = 'link';
 export type ExternalWorkResourceType =
   GithubWorkResourceType | LinearWorkResourceType | LinkWorkResourceType;
 export type WorkResourceType =
-  'canvas' | 'document' | ExternalWorkResourceType | 'file' | 'goal_report' | 'task';
+  'canvas' | 'document' | ExternalWorkResourceType | 'file' | 'gallery' | 'goal_report' | 'task';
 export type WorkVisibility = 'private' | 'public';
 /**
  * How a version changed the Work. Not derivable from `version === 1`: updating
@@ -128,6 +129,26 @@ export interface CanvasStorageItem {
   workId: string | null;
 }
 
+/** One image of a `gallery` Work, in display order. */
+export interface GalleryWorkImage {
+  caption?: string;
+  /** The image's file-store id; the server checks the run owns it. */
+  fileId: string;
+  mimeType?: string;
+  /** Durable URL of the image (`/f/<fileId>`), resolved by the server. */
+  url: string;
+}
+
+/**
+ * `gallery` Work — the complete image list of this version. Every version
+ * carries the full list: an update replaces it, never patches it.
+ */
+export interface GalleryWorkVersionMetadata {
+  /** File id of the cover image; the first image when unset. */
+  coverFileId?: string;
+  items: GalleryWorkImage[];
+}
+
 export interface WorkVersionMetadata {
   agentDocumentId?: string;
   /** `external` GitHub PR Work — the branch the pull request merges into. */
@@ -145,6 +166,7 @@ export interface WorkVersionMetadata {
   fileSize?: number;
   /** `file` Work — durable, fetchable URL of the persisted file. */
   fileUrl?: string;
+  gallery?: GalleryWorkVersionMetadata;
   /** `goal_report` Work — the structured storyline; the full report is the version's `content`. */
   goalReport?: GoalReportMetadata;
   /** `goal_report` Work — the report as an HTML page: a `custom/html` document id. */
@@ -327,11 +349,23 @@ export interface CanvasWorkListItem extends WorkListBaseItem {
   type: 'canvas';
 }
 
+/**
+ * A set of images an agent collected into one Work (the `lobe-work` tool). Its
+ * resource id is a generated `gal_` id, so every create is a new gallery. The
+ * `works.url` column holds the cover image URL for list rows; the image list
+ * lives in {@link GalleryWorkVersionMetadata}.
+ */
+export interface GalleryWorkListItem extends WorkListBaseItem {
+  resourceType: 'gallery';
+  type: 'gallery';
+}
+
 export type WorkListItem =
   | CanvasWorkListItem
   | DocumentWorkListItem
   | ExternalWorkListItem
   | FileWorkListItem
+  | GalleryWorkListItem
   | TaskWorkListItem;
 
 export interface TaskWorkVersionEventItem extends TaskWorkListItem {
@@ -354,11 +388,16 @@ export interface CanvasWorkVersionEventItem extends CanvasWorkListItem {
   version: WorkVersionPreview;
 }
 
+export interface GalleryWorkVersionEventItem extends GalleryWorkListItem {
+  version: WorkVersionPreview;
+}
+
 export type WorkVersionEventItem =
   | CanvasWorkVersionEventItem
   | DocumentWorkVersionEventItem
   | ExternalWorkVersionEventItem
   | FileWorkVersionEventItem
+  | GalleryWorkVersionEventItem
   | TaskWorkVersionEventItem;
 export type WorkVersionEventMap = Record<string, WorkVersionEventItem[]>;
 
@@ -395,11 +434,18 @@ export interface CanvasWorkSummaryItem extends CanvasWorkListItem {
   version: Pick<WorkVersionItem, 'createdAt' | 'id' | 'version'> | null;
 }
 
+export interface GalleryWorkSummaryItem extends GalleryWorkListItem {
+  event: WorkSummaryVersionPreview;
+  totalCost: number | null;
+  version: Pick<WorkVersionItem, 'createdAt' | 'id' | 'version'> | null;
+}
+
 export type WorkSummaryItem =
   | CanvasWorkSummaryItem
   | DocumentWorkSummaryItem
   | ExternalWorkSummaryItem
   | FileWorkSummaryItem
+  | GalleryWorkSummaryItem
   | TaskWorkSummaryItem;
 export type WorkSummaryMap = Record<string, WorkSummaryItem[]>;
 
@@ -820,7 +866,8 @@ export const AGENT_WORK_CLI_TOOL_IDENTIFIER = 'lobehub-cli';
 
 /**
  * What an agent registers itself as a Work: a file it produced (already
- * uploaded to the file store) or a plain http(s) link.
+ * uploaded to the file store), a plain http(s) link, or a gallery of images it
+ * collected.
  */
 export type CreateAgentWorkInput =
   | {
@@ -841,16 +888,23 @@ export type CreateAgentWorkInput =
       title: string;
       type: 'link';
       url: string;
-    };
+    }
+  | ({
+      description?: string;
+      title: string;
+      type: 'gallery';
+    } & GalleryWorkVersionMetadata);
 
 /**
  * A new version of an agent-created Work. Fields left out keep the current
- * version's values. `file` applies to file Works. A link Work's URL is its
+ * version's values. `file` applies to file Works and `gallery` to gallery
+ * Works, where it replaces the whole image list. A link Work's URL is its
  * identity and does not change; a new link is a new Work.
  */
 export interface UpdateAgentWorkInput {
   description?: string;
   file?: Omit<Extract<CreateAgentWorkInput, { type: 'file' }>['file'], 'filePath'>;
+  gallery?: GalleryWorkVersionMetadata;
   title?: string;
   workId: string;
 }
@@ -858,8 +912,17 @@ export interface UpdateAgentWorkInput {
 /** The run an agent Work is registered from, resolved server-side from its operation. */
 export interface AgentWorkRunContext {
   agentId?: string | null;
+  /** The assistant message of the tool call, when a builtin tool (not the CLI) writes. */
+  messageId?: string | null;
   operationId: string;
   threadId?: string | null;
+  /** Tool call id of a builtin-tool write; a retried call does not add a second version. */
+  toolCallId?: string | null;
+  /** Defaults to {@link AGENT_WORK_CLI_TOOL_IDENTIFIER}. */
+  toolIdentifier?: string;
   topicId: string;
   userId: string;
 }
+
+/** Most images one gallery Work holds. */
+export const GALLERY_WORK_MAX_ITEMS = 50;

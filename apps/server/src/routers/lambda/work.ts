@@ -288,6 +288,23 @@ export const workRouter = router({
       }
     }),
 
+  /** Delete a Work the agent created by mistake (`lh work delete`). */
+  deleteAgentWork: agentWorkProcedure
+    .input(z.object({ operationId: z.string().min(1), workId: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const { run, workModel } = await resolveAgentWorkRun({
+          auth: ctx,
+          db: ctx.serverDB,
+          operationId: input.operationId,
+          userId: ctx.userId,
+        });
+        return await workModel.deleteAgentWork(run, input.workId);
+      } catch (error) {
+        return toAgentWorkTRPCError(error);
+      }
+    }),
+
   listByConversation: workProcedure
     .input(
       z.object({
@@ -310,7 +327,10 @@ export const workRouter = router({
         limit: z.number().min(1).max(100).default(30),
         originAgentId: z.string().nullable().optional(),
         provider: z.enum(WORK_SKILL_PROVIDERS).optional(),
-        type: z.enum(['task', 'document', 'external', 'file', 'canvas']).nullable().optional(),
+        type: z
+          .enum(['task', 'document', 'external', 'file', 'gallery', 'canvas'])
+          .nullable()
+          .optional(),
         visibility: z.enum(['private', 'public']).optional(),
       }),
     )

@@ -29,6 +29,7 @@ const prefixes = {
   evalTestCases: 'case',
   expertiseDomains: 'epd',
   files: 'file',
+  galleries: 'gal',
   generationBatches: 'gb',
   generationTopics: 'gt',
   generations: 'gen',

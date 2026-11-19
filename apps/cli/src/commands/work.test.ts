@@ -7,6 +7,7 @@ import { registerWorkCommand } from './work';
 
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
+  delete: vi.fn(),
   lookup: vi.fn(),
   update: vi.fn(),
   upload: vi.fn(),
@@ -16,6 +17,7 @@ vi.mock('../api/client', () => ({
   getTrpcClient: async () => ({
     work: {
       createAgentWork: { mutate: mocks.create },
+      deleteAgentWork: { mutate: mocks.delete },
       lookupPullRequest: { query: mocks.lookup },
       updateAgentWork: { mutate: mocks.update },
     },
@@ -184,5 +186,32 @@ describe('work create / update', () => {
       title: undefined,
       workId: 'work_1',
     });
+  });
+});
+
+describe('work delete', () => {
+  beforeEach(() => {
+    mocks.delete.mockReset();
+    mocks.delete.mockResolvedValue({ id: 'work_1', title: 'Wrong shelf' });
+    vi.stubEnv('LOBEHUB_OPERATION_ID', 'op_run');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it('deletes the Work under the running operation', async () => {
+    const out = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await runWork('delete', 'work_1');
+
+    expect(mocks.delete).toHaveBeenCalledWith({ operationId: 'op_run', workId: 'work_1' });
+    expect(out).toHaveBeenCalledWith('Deleted Work work_1: Wrong shelf');
+  });
+
+  it('needs a running operation', async () => {
+    vi.stubEnv('LOBEHUB_OPERATION_ID', '');
+    await expect(runWork('delete', 'work_1')).rejects.toThrow('--operation');
+    expect(mocks.delete).not.toHaveBeenCalled();
   });
 });

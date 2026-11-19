@@ -1,5 +1,5 @@
 import type { ShareVisibility } from '../topic';
-import type { WorkItem } from '../work';
+import type { GalleryWorkVersionMetadata, WorkItem } from '../work';
 
 /** A creator-authored visitor task, independent of the agent's opening questions. */
 export interface AgentShareDemoCase {
@@ -21,7 +21,11 @@ export type SharedAgentWork = Pick<
   | 'type'
   | 'updatedAt'
   | 'url'
-> & { totalCost: number | null };
+> & {
+  /** A gallery Work's images, so its card shows the count and opens the grid; `url` is the cover. */
+  gallery?: GalleryWorkVersionMetadata;
+  totalCost: number | null;
+};
 
 /** Creator-side delivery aggregates; selection for the showcase does not change the sample. */
 export interface SharedAgentDeliveryStats {

@@ -15,9 +15,9 @@ Two tables (`packages/database/src/schemas/work.ts`):
 
 ## Type registry
 
-`packages/database/src/models/work/registry.ts` is the single registry of Work types (`document` / `external` / `file` / `task`): `WORK_TYPE_ADAPTERS` is `satisfies Record<WorkType, WorkTypeAdapter>`, so a type added to `@lobechat/types` without an adapter is a compile error.
+`packages/database/src/models/work/registry.ts` is the single registry of Work types (`canvas` / `document` / `external` / `file` / `gallery` / `goal_report` / `task`): `WORK_TYPE_ADAPTERS` is `satisfies Record<WorkType, WorkTypeAdapter>`, so a type added to `@lobechat/types` without an adapter is a compile error.
 
-**Read-path compatibility gate**: `OPT_IN_WORK_TYPES` (currently `{'file'}`) hides newer types from clients that did not opt in (`includeFileWorks`). Released Electron clients lag by weeks and crash on unknown type descriptors (`descriptor.getIcon` on `undefined`), so a request without the opt-in receives exactly the pre-`file` set. Any NEW Work type must ship behind the same kind of opt-in.
+**Read-path compatibility gate**: `OPT_IN_WORK_TYPES` (currently `{'canvas', 'file', 'gallery'}`) hides newer types from clients that did not opt in (`includeFileWorks`). Released Electron clients lag by weeks and crash on unknown type descriptors (`descriptor.getIcon` on `undefined`), so a request without the opt-in receives exactly the pre-`file` set. Any NEW Work type must ship behind the same kind of opt-in.
 
 The gate has two kinds of emission points, and both must honor the client's declaration:
 
@@ -50,15 +50,18 @@ Five write paths, two timing classes:
 | Shell Work scan (hetero codex/claude-code + device `lobe-local-system`) | at operation completion             | `apps/server/src/services/workRegistration/shellWorkRegistration.ts` via `registerWorksForOperation`                                                                |
 | File Work scan (sandbox entity files)                                   | at operation completion             | `apps/server/src/services/workRegistration/registerWorksForOperation.ts`                                                                                            |
 | Task / document works                                                   | at creation by their owning feature | `WorkModel.registerTask` / `registerDocument`                                                                                                                       |
-| Agent-created files and links (`lh work create\|update`)                | at the CLI call, during the run     | `work.createAgentWork` / `updateAgentWork` → `WorkModel.createAgentWork` / `updateAgentWork` (`packages/database/src/models/work/agentWork.ts`)                     |
+| Agent-created files and links (`lh work create\|update\|delete`)        | at the CLI call, during the run     | `work.createAgentWork` / `updateAgentWork` / `deleteAgentWork` → the same-named `WorkModel` methods (`packages/database/src/models/work/agentWork.ts`)              |
+| Agent-created galleries and links (`lobe-work` tool)                    | at the tool call, during the run    | `apps/server/src/services/toolExecution/serverRuntimes/work.ts` → the same `WorkModel` methods                                                                      |
 
 ### Agent-created Works and `agentEditable`
 
-`works.metadata.agentEditable` is stamped once, when the identity is first registered, and decides whether the agent may change the Work later. `lh work` stamps it on everything it creates; every other path leaves it unset unless the tool API's manifest `work` config declares `agentEditable: true` (`PluginApiWorkConfig`). `lh work update` refuses a Work without the flag and changes only file and link Works: a task or document card mirrors its own resource, so rewriting the card title would leave the two disagreeing. `lh work create` also refuses to add a version to an auto-collected Work with the same identity (for example a file path the completion scan already registered). Declare future agent-facing field policy (such as a system-owned price) on the same manifest config instead of special-casing write paths.
+`works.metadata.agentEditable` is stamped once, when the identity is first registered, and decides whether the agent may change the Work later. `lh work` and the `lobe-work` tool stamp it on everything they create; every other path leaves it unset unless the tool API's manifest `work` config declares `agentEditable: true` (`PluginApiWorkConfig`). Update and delete refuse a Work without the flag, a Work of another user, and a Work no version of which came from the run's conversation; they handle only file, link and gallery Works: a task or document card mirrors its own resource, so rewriting the card title would leave the two disagreeing. `lh work create` also refuses to add a version to an auto-collected Work with the same identity (for example a file path the completion scan already registered). Declare future agent-facing field policy (such as a system-owned price) on the same manifest config instead of special-casing write paths.
 
 - The run is resolved server-side from `operationId` (`resolveAgentWorkRun`): topic, agent and share scope come from the operation row, and an operation token needs the `work:write` capability. A desktop-local run has no operation row and cannot use it.
 - The CLI sends only the uploaded file id; size, type and URL come from the file row (`resolveAgentWorkFile`).
 - Links register as external `resourceType: 'link'` with the canonical URL as identity, so `lh work update` never changes a link's URL (a moved URL would leave `resourceId` pointing at the old one); a new URL is a new Work. GitHub and Linear links are refused because their own paths register them.
+- A `gallery` Work (`resourceType: 'gallery'`, `gal_` resource id) holds an ordered image list in `work_versions.metadata.gallery`; every create is a new gallery and every update stores the complete list. `works.url` holds the cover URL for list rows. Images must be files the run's user generated or uploaded as run output (`resolveAgentWorkGalleryItems`), named by id or by the `/f/<id>` link image generation returns.
+- Delete removes the Work row and, through the FK cascade, its versions; the files stay.
 - `rootOperationId` is the run's operation, so the completion lifecycle stamps the display anchor; the card appears after the run completes.
 
 ### Execution-time: skill providers

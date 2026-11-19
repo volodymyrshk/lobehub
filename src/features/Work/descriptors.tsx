@@ -1,6 +1,7 @@
 import { classifyEditedFile, getBasename } from '@lobechat/builtin-tools/fileEditScan';
 import {
   type ExternalWorkResourceType,
+  type GalleryWorkImage,
   type ListedWorkType,
   type WorkListItem,
   workProviderOfResourceType,
@@ -21,6 +22,7 @@ import {
   FileTextIcon,
   FileTypeIcon,
   GitPullRequestDraftIcon,
+  ImagesIcon,
   LinkIcon,
   PanelsTopLeftIcon,
   PresentationIcon,
@@ -130,7 +132,13 @@ export type WorkOpenTarget =
    * chat portal (WorkGallery), so they don't recompute the file-metadata lookup.
    */
   | { fileId: string; kind: 'filePreview'; url?: string }
-  | { canvasId: string; kind: 'canvas'; version?: number };
+  | { canvasId: string; kind: 'canvas'; version?: number }
+  /**
+   * Grid viewer of a gallery Work. Summary rows carry the version's images;
+   * list rows only know the cover, so the viewer loads the images itself when
+   * `items` is missing.
+   */
+  | { items?: GalleryWorkImage[]; kind: 'gallery'; title?: string | null; workId: string };
 
 /**
  * Client-side allowlist for external Work URLs (defense in depth over the
@@ -250,6 +258,27 @@ const getFileWorkMetadata = (item: WorkItemOfType<'file'>): WorkVersionMetadata 
 const getFileWorkPath = (item: WorkItemOfType<'file'>): string | null =>
   getFileWorkMetadata(item)?.filePath ?? item.description?.trim() ?? null;
 
+/** The images of a gallery summary row; list rows carry no version metadata. */
+const getGalleryItems = (item: WorkItemOfType<'gallery'>): GalleryWorkImage[] | undefined =>
+  'event' in item ? (item.event?.metadata?.gallery?.items ?? undefined) : undefined;
+
+/**
+ * The cover a gallery card shows: the version's named cover, else its first
+ * image, else the denormalized `works.url` list rows carry. Only http(s) URLs.
+ */
+export const getGalleryCoverUrl = (item: WorkItemOfType<'gallery'>): string | null => {
+  const gallery = 'event' in item ? item.event?.metadata?.gallery : undefined;
+  const cover = gallery?.coverFileId
+    ? gallery.items.find((image) => image.fileId === gallery.coverFileId)
+    : undefined;
+  const url = (cover ?? gallery?.items[0])?.url ?? item.url;
+  return isSafeExternalUrl(url) ? url : null;
+};
+
+/** Image count of a gallery summary row, `null` for list rows that do not know it. */
+export const getGalleryImageCount = (item: WorkItemOfType<'gallery'>): number | null =>
+  getGalleryItems(item)?.length ?? null;
+
 export const WORK_TYPE_DESCRIPTORS: {
   [T in ListedWorkType]: WorkTypeDescriptor<WorkItemOfType<T>>;
 } = {
@@ -294,9 +323,9 @@ export const WORK_TYPE_DESCRIPTORS: {
   // aggregate card instead. The version metadata carries the file identity
   // (path / url); plain list rows fall back to the denormalized `works` columns.
   file: {
-    // Subtitle is the file path (metadata), falling back to the denormalized
-    // description column for list rows without version metadata.
-    getDescription: (item) => getFileWorkPath(item),
+    // Subtitle is the description an agent gave the file; otherwise the
+    // denormalized description column holds the file path.
+    getDescription: (item) => item.description?.trim() || getFileWorkPath(item),
     // Pick the branded file-type badge from the file's extension; unclassifiable
     // paths (or a path-less list row) fall back to the generic file-text glyph.
     getIcon: (item) => {
@@ -361,6 +390,18 @@ export const WORK_TYPE_DESCRIPTORS: {
     getOpenTarget: (item) =>
       isSafeExternalUrl(item.url) ? { kind: 'external', url: item.url } : null,
     getStateLabelKey: (item) => getGithubState(item)?.labelKey ?? null,
+    getTitle: (item) => item.title,
+  },
+  gallery: {
+    getDescription: (item) => item.description?.trim() ?? null,
+    getIcon: () => ImagesIcon,
+    getIdentifier: () => null,
+    getOpenTarget: (item) => ({
+      items: getGalleryItems(item),
+      kind: 'gallery',
+      title: item.title,
+      workId: item.id,
+    }),
     getTitle: (item) => item.title,
   },
   task: {

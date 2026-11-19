@@ -10,6 +10,7 @@ vi.mock('@/database/core/db-adaptor', () => ({
 
 const mocks = vi.hoisted(() => ({
   createAgentWork: vi.fn(),
+  deleteAgentWork: vi.fn(),
   resolveFile: vi.fn(),
   resolveRun: vi.fn(),
   updateAgentWork: vi.fn(),
@@ -47,6 +48,7 @@ describe('workRouter — agent-created Works', () => {
       run,
       workModel: {
         createAgentWork: mocks.createAgentWork,
+        deleteAgentWork: mocks.deleteAgentWork,
         updateAgentWork: mocks.updateAgentWork,
       },
       workspaceId: 'ws_1',
@@ -131,5 +133,23 @@ describe('workRouter — agent-created Works', () => {
       title: undefined,
       workId: 'work_1',
     });
+  });
+
+  it('deletes a Work through the run resolved from the operation', async () => {
+    mocks.deleteAgentWork.mockResolvedValueOnce({ id: 'work_1', title: 'Wrong' });
+
+    await expect(
+      createCaller().deleteAgentWork({ operationId: 'op_run', workId: 'work_1' }),
+    ).resolves.toEqual({ id: 'work_1', title: 'Wrong' });
+    expect(mocks.resolveRun).toHaveBeenCalledWith(
+      expect.objectContaining({ operationId: 'op_run' }),
+    );
+    expect(mocks.deleteAgentWork).toHaveBeenCalledWith(run, 'work_1');
+
+    mocks.deleteAgentWork.mockRejectedValueOnce(new AgentWorkError('NOT_FOUND', 'missing'));
+    await expectCode(
+      createCaller().deleteAgentWork({ operationId: 'op_run', workId: 'work_2' }),
+      'NOT_FOUND',
+    );
   });
 });

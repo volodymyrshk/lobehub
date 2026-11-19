@@ -4,6 +4,7 @@ import { canvasWorkAdapter } from './canvas';
 import { documentWorkAdapter } from './document';
 import { externalWorkAdapter } from './external';
 import { fileWorkAdapter } from './file';
+import { galleryWorkAdapter } from './gallery';
 import { goalReportWorkAdapter } from './goalReport';
 import type { WorkTypeAdapter } from './internal';
 import { taskWorkAdapter } from './task';
@@ -19,6 +20,7 @@ export const WORK_TYPE_ADAPTERS = {
   document: documentWorkAdapter,
   external: externalWorkAdapter,
   file: fileWorkAdapter,
+  gallery: galleryWorkAdapter,
   goal_report: goalReportWorkAdapter,
   task: taskWorkAdapter,
 } satisfies Record<WorkType, WorkTypeAdapter>;
@@ -43,7 +45,7 @@ export const workTypeAdapters = WORK_TYPES.map(
  * request that does not opt in therefore receives the pre-`file` set, keeping
  * every already-deployed client byte-identically safe; new clients opt in.
  */
-const OPT_IN_WORK_TYPES = new Set<WorkType>(['canvas', 'file']);
+const OPT_IN_WORK_TYPES = new Set<WorkType>(['canvas', 'file', 'gallery']);
 
 /** The pre-`file` type set every already-deployed client is known to render. */
 export const LEGACY_WORK_TYPES = WORK_TYPES.filter((type) => !OPT_IN_WORK_TYPES.has(type));

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getWorkTypeDescriptor } from './descriptors';
+import { getGalleryCoverUrl, getGalleryImageCount, getWorkTypeDescriptor } from './descriptors';
 
 describe('getWorkTypeDescriptor', () => {
   it('returns a usable fallback descriptor for an unknown work type', () => {
@@ -74,6 +74,18 @@ describe('getWorkTypeDescriptor', () => {
       });
     });
 
+    it('shows the description an agent gave the file over its path', () => {
+      const item = {
+        ...baseFileItem,
+        description: 'Quarterly numbers for the board',
+        event: { metadata: { filePath: '/tmp/deck/slides.pptx' } },
+      } as any;
+
+      expect(getWorkTypeDescriptor(item).getDescription(item)).toBe(
+        'Quarterly numbers for the board',
+      );
+    });
+
     it('shows the title an agent gave the file over the file name', () => {
       const item = { ...baseFileItem, title: 'Q3 report' } as any;
 
@@ -108,6 +120,66 @@ describe('getWorkTypeDescriptor', () => {
       agentDocumentId: undefined,
       documentId: 'doc-1',
       kind: 'document',
+    });
+  });
+
+  describe('gallery', () => {
+    const image = (n: number) => ({
+      fileId: `file-${n}`,
+      mimeType: 'image/png',
+      url: `https://app.example.com/f/file-${n}`,
+    });
+    const listRow = {
+      description: null,
+      id: 'work-gallery-1',
+      identifier: null,
+      resourceId: 'gal_1',
+      resourceType: 'gallery',
+      title: 'Top ten CD shelf',
+      type: 'gallery',
+      url: 'https://app.example.com/f/file-2',
+    };
+    const summaryRow = {
+      ...listRow,
+      event: { metadata: { gallery: { coverFileId: 'file-2', items: [image(1), image(2)] } } },
+    };
+
+    it('opens the viewer with the images a summary row carries', () => {
+      const item = summaryRow as any;
+
+      expect(getWorkTypeDescriptor(item).getOpenTarget(item)).toEqual({
+        items: [image(1), image(2)],
+        kind: 'gallery',
+        title: 'Top ten CD shelf',
+        workId: 'work-gallery-1',
+      });
+      expect(getGalleryImageCount(item)).toBe(2);
+      expect(getGalleryCoverUrl(item)).toBe(image(2).url);
+    });
+
+    it('leaves loading the images to the viewer for a list row', () => {
+      const item = listRow as any;
+
+      expect(getWorkTypeDescriptor(item).getOpenTarget(item)).toEqual({
+        items: undefined,
+        kind: 'gallery',
+        title: 'Top ten CD shelf',
+        workId: 'work-gallery-1',
+      });
+      expect(getGalleryImageCount(item)).toBeNull();
+      // List rows show the cover denormalized into works.url.
+      expect(getGalleryCoverUrl(item)).toBe('https://app.example.com/f/file-2');
+    });
+
+    it('falls back to the first image without a named cover, and drops non-http(s) covers', () => {
+      const firstImage = {
+        ...summaryRow,
+        event: { metadata: { gallery: { items: [image(3), image(1)] } } },
+      } as any;
+      expect(getGalleryCoverUrl(firstImage)).toBe(image(3).url);
+
+      const unsafe = { ...listRow, url: 'javascript:alert(1)' } as any;
+      expect(getGalleryCoverUrl(unsafe)).toBeNull();
     });
   });
 

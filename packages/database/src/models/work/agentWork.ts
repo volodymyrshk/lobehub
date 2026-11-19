@@ -1,18 +1,21 @@
 import type {
   AgentWorkRunContext,
   CreateAgentWorkInput,
+  GalleryWorkVersionMetadata,
   UpdateAgentWorkInput,
   WorkDisplayField,
   WorkItem,
   WorkVersionMetadata,
 } from '@lobechat/types';
-import { AGENT_WORK_CLI_TOOL_IDENTIFIER } from '@lobechat/types';
+import { AGENT_WORK_CLI_TOOL_IDENTIFIER, GALLERY_WORK_MAX_ITEMS } from '@lobechat/types';
 import { and, eq, exists } from 'drizzle-orm';
 
 import { works, workVersions } from '../../schemas/work';
+import { idGenerator } from '../../utils/idGenerator';
 import { type WorkContext, workOwnership } from './context';
 import { registerExternalWork } from './external';
 import { fileBasename, fileWorkResourceId, registerFileWork } from './file';
+import { galleryCoverUrl } from './gallery';
 import { sanitizeExternalUrl } from './toolResultParsing';
 import { registerWorkVersion } from './writes';
 
@@ -48,7 +51,7 @@ const normalizeAgentLink = (value: string): string => {
   if (isAutoRegisteredHost(url.hostname)) {
     throw new AgentWorkError(
       'BAD_REQUEST',
-      `${url.hostname} links are registered automatically when you create or edit them; do not register them with lh work`,
+      `${url.hostname} links are registered automatically when you create or edit them; do not register them yourself`,
     );
   }
   return url.href;
@@ -56,11 +59,79 @@ const normalizeAgentLink = (value: string): string => {
 
 const provenanceOf = (run: AgentWorkRunContext, toolName: string) => ({
   agentId: run.agentId ?? null,
+  messageId: run.messageId ?? null,
   rootOperationId: run.operationId,
   threadId: run.threadId ?? null,
-  toolIdentifier: AGENT_WORK_CLI_TOOL_IDENTIFIER,
+  toolCallId: run.toolCallId ?? null,
+  toolIdentifier: run.toolIdentifier ?? AGENT_WORK_CLI_TOOL_IDENTIFIER,
   toolName,
   topicId: run.topicId,
+});
+
+/**
+ * Text limits of an agent-written Work, shared by `lh work` and the `lobe-work`
+ * tool so a model cannot store unbounded text on a card or a share profile.
+ */
+const AGENT_WORK_TEXT_LIMITS = { caption: 500, description: 2000, title: 200 } as const;
+
+const assertValidText = (input: {
+  description?: string | null;
+  items?: { caption?: string }[];
+  title?: string;
+}) => {
+  if (input.title !== undefined && !input.title.trim()) {
+    throw new AgentWorkError('BAD_REQUEST', 'A Work title cannot be empty');
+  }
+  if ((input.title?.length ?? 0) > AGENT_WORK_TEXT_LIMITS.title) {
+    throw new AgentWorkError(
+      'BAD_REQUEST',
+      `A Work title is at most ${AGENT_WORK_TEXT_LIMITS.title} characters`,
+    );
+  }
+  if ((input.description?.length ?? 0) > AGENT_WORK_TEXT_LIMITS.description) {
+    throw new AgentWorkError(
+      'BAD_REQUEST',
+      `A Work description is at most ${AGENT_WORK_TEXT_LIMITS.description} characters`,
+    );
+  }
+  if (input.items?.some((item) => (item.caption?.length ?? 0) > AGENT_WORK_TEXT_LIMITS.caption)) {
+    throw new AgentWorkError(
+      'BAD_REQUEST',
+      `An image caption is at most ${AGENT_WORK_TEXT_LIMITS.caption} characters`,
+    );
+  }
+};
+
+/** Check a gallery's image list before it is stored as a version. */
+const assertValidGallery = (gallery: GalleryWorkVersionMetadata) => {
+  if (gallery.items.length === 0) {
+    throw new AgentWorkError('BAD_REQUEST', 'A gallery needs at least one image');
+  }
+  if (gallery.items.length > GALLERY_WORK_MAX_ITEMS) {
+    throw new AgentWorkError(
+      'BAD_REQUEST',
+      `A gallery holds at most ${GALLERY_WORK_MAX_ITEMS} images`,
+    );
+  }
+  const fileIds = new Set(gallery.items.map((item) => item.fileId));
+  if (fileIds.size !== gallery.items.length) {
+    throw new AgentWorkError('BAD_REQUEST', 'Each image may appear in a gallery only once');
+  }
+  if (gallery.coverFileId && !fileIds.has(gallery.coverFileId)) {
+    throw new AgentWorkError('BAD_REQUEST', 'The cover must be one of the gallery images');
+  }
+};
+
+const galleryMetadata = (gallery: GalleryWorkVersionMetadata): WorkVersionMetadata => ({
+  gallery: {
+    ...(gallery.coverFileId ? { coverFileId: gallery.coverFileId } : {}),
+    items: gallery.items.map((item) => ({
+      ...(item.caption ? { caption: item.caption } : {}),
+      fileId: item.fileId,
+      ...(item.mimeType ? { mimeType: item.mimeType } : {}),
+      url: item.url,
+    })),
+  },
 });
 
 /**
@@ -90,7 +161,7 @@ const assertNotAutoRegistered = async (
   if (existing && existing.metadata?.agentEditable !== true) {
     throw new AgentWorkError(
       'CONFLICT',
-      'This was already registered as a Work automatically and cannot be changed with lh work',
+      'This was already registered as a Work automatically and cannot be changed by the agent',
     );
   }
   return Boolean(existing);
@@ -106,6 +177,11 @@ export const createAgentWork = async (
   run: AgentWorkRunContext,
   input: CreateAgentWorkInput,
 ): Promise<WorkItem> => {
+  assertValidText({
+    description: input.description,
+    items: input.type === 'gallery' ? input.items : undefined,
+    title: input.title,
+  });
   if (input.type === 'file') {
     const { file } = input;
     await assertNotAutoRegistered(
@@ -131,6 +207,31 @@ export const createAgentWork = async (
     });
   }
 
+  if (input.type === 'gallery') {
+    assertValidGallery(input);
+    // Every create is a new gallery: images are added to an existing one with
+    // an update, which replaces its whole list.
+    return registerWorkVersion(
+      ctx,
+      {
+        resourceId: idGenerator('galleries'),
+        resourceType: 'gallery',
+        type: 'gallery',
+        userId: run.userId,
+        visibility: 'private',
+      },
+      { ...provenanceOf(run, 'createWork'), agentEditable: true, changeType: 'created' },
+      () => ({
+        display: {
+          description: input.description ?? null,
+          title: input.title,
+          url: galleryCoverUrl(input),
+        },
+        metadata: galleryMetadata(input),
+      }),
+    );
+  }
+
   const url = normalizeAgentLink(input.url);
   const alreadyCreated = await assertNotAutoRegistered(ctx, 'link', url);
 
@@ -148,26 +249,27 @@ export const createAgentWork = async (
   return work;
 };
 
+/** Work types an agent may change or delete after creating them. */
+const isAgentManagedWork = (work: { resourceType: string; type: string }) =>
+  work.type === 'file' ||
+  work.type === 'gallery' ||
+  (work.type === 'external' && work.resourceType === 'link');
+
 /**
- * Add a version to a Work the agent created (`lh work update`). Only Works
- * stamped `agentEditable` at creation qualify; fields left out keep their
- * current values.
+ * Find a Work this run may change or delete: an `agentEditable` file, link or
+ * gallery Work of the same creator, produced in this run's conversation.
  */
-export const updateAgentWork = async (
-  ctx: WorkContext,
-  run: AgentWorkRunContext,
-  input: UpdateAgentWorkInput,
-): Promise<WorkItem> => {
+const findAgentManagedWork = async (ctx: WorkContext, run: AgentWorkRunContext, workId: string) => {
   const [work] = await ctx.db
     .select()
     .from(works)
     .where(
       and(
-        eq(works.id, input.workId),
+        eq(works.id, workId),
         workOwnership(ctx),
         // Only the creator's runs in a conversation that produced the Work may
         // change it: workspace scope alone would let a teammate's run, or a run
-        // in another conversation, append versions to it.
+        // in another conversation, append versions to it or delete it.
         eq(works.userId, run.userId),
         exists(
           ctx.db
@@ -178,43 +280,70 @@ export const updateAgentWork = async (
       ),
     )
     .limit(1);
-  if (!work?.resourceId) throw new AgentWorkError('NOT_FOUND', `Work ${input.workId} not found`);
+  if (!work?.resourceId) throw new AgentWorkError('NOT_FOUND', `Work ${workId} not found`);
   if (work.metadata?.agentEditable !== true) {
     throw new AgentWorkError(
       'FORBIDDEN',
-      'This Work was registered automatically and cannot be changed with lh work',
+      'This Work was registered automatically and cannot be changed by the agent',
     );
   }
-  // A task or document card mirrors its own resource, so rewriting the card's
-  // title would leave it disagreeing with the task or document it opens.
-  // `agentEditable` on those types stays a hook for future field-level policy.
-  const isLink = work.type === 'external' && work.resourceType === 'link';
-  if (work.type !== 'file' && !isLink) {
+  // A task or document card mirrors its own resource, so rewriting or removing
+  // the card alone would leave it disagreeing with the task or document it
+  // opens. `agentEditable` on those types stays a hook for future policy.
+  if (!isAgentManagedWork(work)) {
     throw new AgentWorkError(
       'BAD_REQUEST',
-      'lh work update only changes file and link Works; update the task or document itself',
+      'Only file, link and gallery Works can be changed this way; update the task or document itself',
     );
   }
+  return { ...work, resourceId: work.resourceId };
+};
+
+/**
+ * Add a version to a Work the agent created (`lh work update`, `lobe-work`
+ * `updateWork`). Only Works stamped `agentEditable` at creation qualify;
+ * fields left out keep their current values. A gallery update replaces the
+ * whole image list.
+ */
+export const updateAgentWork = async (
+  ctx: WorkContext,
+  run: AgentWorkRunContext,
+  input: UpdateAgentWorkInput,
+): Promise<WorkItem> => {
+  const work = await findAgentManagedWork(ctx, run, input.workId);
 
   if (input.file && work.type !== 'file') {
     throw new AgentWorkError('BAD_REQUEST', 'Only a file Work takes a new file');
   }
+  if (input.gallery && work.type !== 'gallery') {
+    throw new AgentWorkError('BAD_REQUEST', 'Only a gallery Work takes images');
+  }
+  if (input.gallery) assertValidGallery(input.gallery);
+  assertValidText({
+    description: input.description,
+    items: input.gallery?.items,
+    title: input.title,
+  });
+
   const patchFields: WorkDisplayField[] = [];
   if (input.title !== undefined) patchFields.push('title');
   if (input.description !== undefined) patchFields.push('description');
-  if (input.file) patchFields.push('url');
+  if (input.file || input.gallery) patchFields.push('url');
   if (patchFields.length === 0) {
     throw new AgentWorkError('BAD_REQUEST', 'Nothing to update');
   }
 
-  const metadata: WorkVersionMetadata | undefined = input.file
-    ? {
-        fileId: input.file.fileId,
-        fileSize: input.file.fileSize,
-        fileUrl: input.file.fileUrl,
-        mimeType: input.file.mimeType,
-      }
-    : undefined;
+  let metadata: WorkVersionMetadata | undefined;
+  if (input.file) {
+    metadata = {
+      fileId: input.file.fileId,
+      fileSize: input.file.fileSize,
+      fileUrl: input.file.fileUrl,
+      mimeType: input.file.mimeType,
+    };
+  } else if (input.gallery) {
+    metadata = galleryMetadata(input.gallery);
+  }
 
   return registerWorkVersion(
     ctx,
@@ -230,12 +359,28 @@ export const updateAgentWork = async (
       display: {
         description: input.description,
         title: input.title,
-        url: input.file?.fileUrl,
+        url: input.file?.fileUrl ?? (input.gallery ? galleryCoverUrl(input.gallery) : undefined),
       },
       metadata,
-      // A file-only update patches `url`, so it records a version even
-      // when the title and description are unchanged.
+      // A file- or image-only update patches `url`, so it records a version
+      // even when the title and description are unchanged.
       patchFields,
     }),
   );
+};
+
+/**
+ * Delete a Work the agent created by mistake (`lh work delete`, `lobe-work`
+ * `deleteWork`). Removes the card and its versions; the files it points at
+ * stay in the file store.
+ */
+export const deleteAgentWork = async (
+  ctx: WorkContext,
+  run: AgentWorkRunContext,
+  workId: string,
+): Promise<{ id: string; title: string | null }> => {
+  const work = await findAgentManagedWork(ctx, run, workId);
+  // Versions go with the Work through the `work_versions.work_id` cascade.
+  await ctx.db.delete(works).where(and(eq(works.id, work.id), eq(works.userId, run.userId)));
+  return { id: work.id, title: work.title };
 };

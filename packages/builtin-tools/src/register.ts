@@ -192,6 +192,7 @@ import {
   WebhookInterventions,
   WebhookRenders,
 } from '@lobechat/builtin-tool-webhook/client';
+import { WorkIdentifier, WorkInspectors } from '@lobechat/builtin-tool-work/client';
 import {
   createEditLocalFileInspector,
   createReadLocalFileInspector,
@@ -403,6 +404,7 @@ export const registerBuiltinToolSurfaces = (): void => {
     [LocalSystemManifest.identifier]: LocalSystemInspectors as Record<string, BuiltinInspector>,
     [McpEventsIdentifier]: McpEventsInspectors,
     [WebhookIdentifier]: WebhookInspectors,
+    [WorkIdentifier]: WorkInspectors,
     [MemoryManifest.identifier]: MemoryInspectors as Record<string, BuiltinInspector>,
     [MessageManifest.identifier]: MessageInspectors as Record<string, BuiltinInspector>,
     [PageAgentManifest.identifier]: PageAgentInspectors as Record<string, BuiltinInspector>,

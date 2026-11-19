@@ -5,6 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useVisitorWorkOpen } from './useVisitorWorkOpen';
 
 const openFilePreview = vi.fn();
+const { openGalleryModal } = vi.hoisted(() => ({ openGalleryModal: vi.fn() }));
+
+vi.mock('@/features/GalleryModal/loader', () => ({ openGalleryModal }));
 const conversationState = { context: { agentShareId: 'share_1', topicId: 'tpc_1' } };
 
 vi.mock('../../store', () => ({
@@ -32,6 +35,25 @@ const fileWork = (fileUrl?: string) =>
 describe('useVisitorWorkOpen', () => {
   beforeEach(() => {
     openFilePreview.mockReset();
+    openGalleryModal.mockReset();
+  });
+
+  it('opens a gallery with the images its card carries, and never asks for the versions', () => {
+    const items = [{ fileId: 'file_1', url: 'https://app.lobehub.com/f/file_1' }];
+    const { result } = renderHook(() => useVisitorWorkOpen());
+
+    result.current({
+      event: { metadata: { gallery: { items } } },
+      id: 'wk_gallery',
+      title: 'Shelf',
+      type: 'gallery',
+    } as unknown as WorkSummaryItem);
+    expect(openGalleryModal).toHaveBeenCalledWith({ items, title: 'Shelf' });
+
+    // A row without images has nothing a visitor may load.
+    openGalleryModal.mockReset();
+    result.current({ id: 'wk_gallery', type: 'gallery' } as unknown as WorkSummaryItem);
+    expect(openGalleryModal).not.toHaveBeenCalled();
   });
 
   it('previews a file Work in the portal from its public URL instead of a new tab', () => {

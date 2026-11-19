@@ -554,6 +554,7 @@
   "work.type.canvas": "画布",
   "work.type.document": "文档",
   "work.type.file": "文件",
+  "work.type.gallery": "图集",
   "work.type.githubIssue": "GitHub Issue",
   "work.type.githubPullRequest": "GitHub PR",
   "work.type.linearDocument": "Linear 文档",

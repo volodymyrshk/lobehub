@@ -58,6 +58,7 @@ import { videoGenerationRuntime } from './videoGeneration';
 import { webBrowsingRuntime } from './webBrowsing';
 import { webhookRuntime } from './webhook';
 import { webOnboardingRuntime } from './webOnboarding';
+import { workRuntime } from './work';
 
 /**
  * Registry of server runtime factories by identifier
@@ -77,6 +78,7 @@ const registerRuntimes = (runtimes: ServerRuntimeRegistration[]) => {
 registerRuntimes([
   mcpEventsRuntime,
   webhookRuntime,
+  workRuntime,
   channelRuntime,
   acceptanceEvidenceRuntime,
   auvRuntime,

@@ -23,7 +23,7 @@ import debug from 'debug';
 
 import type { LobeChatDatabase } from '../../type';
 import { ScmChangeRequestModel } from '../scm';
-import { createAgentWork, updateAgentWork } from './agentWork';
+import { createAgentWork, deleteAgentWork, updateAgentWork } from './agentWork';
 import {
   findCanvasIdByWorkId,
   findCanvasIdsByDeploymentIds,
@@ -169,13 +169,17 @@ export class WorkModel {
     userId: string;
   }): Promise<{ id: string } | null> => findFileWorkVersionByToolCall(this.ctx, params);
 
-  /** `lh work create`: register a file or link the agent produced. See {@link createAgentWork}. */
+  /** `lh work create` / `lobe-work`: register a file, link or gallery the agent produced. See {@link createAgentWork}. */
   createAgentWork = (run: AgentWorkRunContext, input: CreateAgentWorkInput) =>
     createAgentWork(this.ctx, run, input);
 
   /** `lh work update`: add a version to an agent-created Work. See {@link updateAgentWork}. */
   updateAgentWork = (run: AgentWorkRunContext, input: UpdateAgentWorkInput) =>
     updateAgentWork(this.ctx, run, input);
+
+  /** `lh work delete`: remove a Work the agent created by mistake. See {@link deleteAgentWork}. */
+  deleteAgentWork = (run: AgentWorkRunContext, workId: string) =>
+    deleteAgentWork(this.ctx, run, workId);
 
   handleSkillToolResult = async (
     params: RegisterSkillToolResultWorkParams,

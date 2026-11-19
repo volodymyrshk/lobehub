@@ -4,7 +4,13 @@ import type { LobeChatDatabase } from '@/database/type';
 import type { HeteroOperationJwtClaims } from '@/libs/trpc/utils/internalJwt';
 import { HeteroOperationPrincipalError } from '@/server/services/heterogeneousAgent/operationPrincipal';
 
-import { AgentWorkRunError, resolveAgentWorkFile, resolveAgentWorkRun } from './agentWork';
+import {
+  AgentWorkRunError,
+  parseGalleryImageRef,
+  resolveAgentWorkFile,
+  resolveAgentWorkGalleryItems,
+  resolveAgentWorkRun,
+} from './agentWork';
 
 const mocks = vi.hoisted(() => ({
   fileAccessUrl: vi.fn(),
@@ -195,5 +201,98 @@ describe('resolveAgentWorkFile', () => {
       }),
       404,
     );
+  });
+});
+
+describe('parseGalleryImageRef', () => {
+  it('reads a bare file id and the /f/ link image generation returns', () => {
+    expect(parseGalleryImageRef('file_LkKoI7OfyZ0c')).toBe('file_LkKoI7OfyZ0c');
+    expect(parseGalleryImageRef('https://app.lobehub.com/f/file_LkKoI7OfyZ0c')).toBe(
+      'file_LkKoI7OfyZ0c',
+    );
+  });
+
+  it('refuses any other link', () => {
+    expect(() => parseGalleryImageRef('https://cdn.example.com/cat.png')).toThrow(
+      AgentWorkRunError,
+    );
+  });
+});
+
+describe('resolveAgentWorkGalleryItems', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const generatedImage = {
+    fileType: 'image/png',
+    id: 'file_img',
+    size: 4096,
+    source: 'image_generation',
+    url: 'generations/hash.png',
+    userId: 'user_1',
+  };
+
+  it('stores the URL and type from the file row, keeping the order and captions', async () => {
+    mocks.findFile.mockImplementation(async (id: string) => ({ ...generatedImage, id }));
+    mocks.fileAccessUrl.mockImplementation(
+      async (file: { id: string }) => `https://app.example.com/f/${file.id}`,
+    );
+
+    await expect(
+      resolveAgentWorkGalleryItems({
+        db: dbWith(undefined),
+        items: [
+          { caption: ' Apple ', image: 'https://app.lobehub.com/f/file_a' },
+          { image: 'file_b' },
+        ],
+        userId: 'user_1',
+      }),
+    ).resolves.toEqual([
+      {
+        caption: 'Apple',
+        fileId: 'file_a',
+        mimeType: 'image/png',
+        url: 'https://app.example.com/f/file_a',
+      },
+      { fileId: 'file_b', mimeType: 'image/png', url: 'https://app.example.com/f/file_b' },
+    ]);
+  });
+
+  it.each([
+    ['an image of another user', { ...generatedImage, userId: 'user_2' }, 404],
+    ['a library upload', { ...generatedImage, source: null }, 404],
+    ['a file that is not an image', { ...generatedImage, fileType: 'application/pdf' }, 409],
+  ])('refuses %s', async (_, file, status) => {
+    mocks.findFile.mockResolvedValue(file);
+    await expectStatus(
+      resolveAgentWorkGalleryItems({
+        db: dbWith(undefined),
+        items: [{ image: 'file_img' }],
+        userId: 'user_1',
+      }),
+      status as 404 | 409,
+    );
+  });
+
+  it("keeps a share visitor's gallery to images shown in that conversation", async () => {
+    mocks.findFile.mockResolvedValue(generatedImage);
+    mocks.fileAccessUrl.mockResolvedValue('https://app.example.com/f/file_img');
+    const visitorRun = (shown: { content: string }[]) => {
+      const query = {
+        from: vi.fn(() => query),
+        where: vi.fn(async () => shown),
+      };
+      return resolveAgentWorkGalleryItems({
+        db: { select: vi.fn(() => query) } as unknown as LobeChatDatabase,
+        items: [{ image: 'file_img' }],
+        userId: 'user_1',
+        visitorTopicId: 'tpc_visitor',
+      });
+    };
+
+    await expect(
+      visitorRun([{ content: '![cover](https://app.example.com/f/file_img)' }]),
+    ).resolves.toHaveLength(1);
+    // The creator's other images never appeared to this visitor.
+    await expectStatus(visitorRun([]), 404);
   });
 });

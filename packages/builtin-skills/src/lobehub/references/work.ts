@@ -12,6 +12,8 @@ web page. Users find their Works on the reply and in the resource library.
 - \`lh work update <work-id> [--file <path>] [--title <title>] [--description <text>] [--json]\` -
   Add a new version to a Work you created. Options left out keep their values. A link
   keeps its URL: register a new link with \`lh work create --url <url>\` instead.
+- \`lh work delete <work-id> [--json]\` - Delete a Work you created by mistake. Its card and
+  versions go; uploaded files stay.
 - \`lh work lookup <github-pr-url>\` - Find the conversations linked to a GitHub pull request.
 
 ## When to use it
@@ -28,7 +30,10 @@ web page. Users find their Works on the reply and in the resource library.
 
 - GitHub pull requests and issues, and Linear issues: they become Works automatically
   when you create or edit them, and \`lh work create\` refuses their links.
-- Works registered automatically cannot be changed with \`lh work update\`.
+- Works registered automatically cannot be changed with \`lh work update\` or deleted with
+  \`lh work delete\`.
+- Several images in one card: use the \`lobe-work\` tool's \`createWork\` with \`type: gallery\`
+  instead of one file Work per image.
 `;
 
 export default content;
