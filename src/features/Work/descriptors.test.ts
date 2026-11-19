@@ -74,6 +74,18 @@ describe('getWorkTypeDescriptor', () => {
       });
     });
 
+    it('shows the title an agent gave the file over the file name', () => {
+      const item = { ...baseFileItem, title: 'Q3 report' } as any;
+
+      expect(getWorkTypeDescriptor(item).getTitle(item)).toBe('Q3 report');
+    });
+
+    it('falls back to the file name when the row has no title', () => {
+      const item = { ...baseFileItem, title: '' } as any;
+
+      expect(getWorkTypeDescriptor(item).getTitle(item)).toBe('slides.pptx');
+    });
+
     it('yields no target when neither fileId nor a safe url exists', () => {
       const item = { ...baseFileItem, url: null } as any;
 

@@ -319,13 +319,13 @@ export const WORK_TYPE_DESCRIPTORS: {
       if (metadata?.fileId) return { fileId: metadata.fileId, kind: 'filePreview', url: safeUrl };
       return safeUrl ? { kind: 'external', url: safeUrl } : null;
     },
-    // Title is the file name (basename of the path), falling back to the
-    // denormalized title column.
+    // The stored title wins: scanned Works store the basename there on every
+    // version, and an agent-created Work (`lh work create --title`) stores the
+    // title the agent chose. The path basename covers rows without a title.
     getTitle: (item) => {
+      if (item.title?.trim()) return item.title;
       const path = getFileWorkPath(item);
-      // `getBasename` returns '' for a segment-less path; fall through to the
-      // denormalized title in that case (matching the previous null-coalescing).
-      return (path ? getBasename(path) : '') || item.title;
+      return path ? getBasename(path) : item.title;
     },
   },
   external: {
